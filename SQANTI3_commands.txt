@@ -1,0 +1,84 @@
+##############
+##### Run an interactive job
+
+srun -t 01:00:00 -c 2 -n 1 --mem 2000 --partition production --account isoseq_workshop --reservation isoseq_workshop  --pty /bin/bash
+
+
+#######################
+### EXERCISE 1
+#######################
+
+module load sqanti3
+source activate cdna_cupcake-13.0.0
+source activate /share/workshop/isoseq_workshop/SQANTI3_handsOn/
+
+export PYTHONPATH=$PYTHONPATH:/software/cdna_cupcake/13.0.0/lssc0-linux/sequence/
+
+## create and move into your working directory
+mkdir /share/workshop/isoseq_workshop/fpardopalacios/working_dir/
+cd /share/workshop/isoseq_workshop/fpardopalacios/working_dir/
+
+## Run SQANTI with the minimum amount of information
+## We just need our isoforms, the reference genome and transcriptome.
+
+## set symbolic links to data
+ln -s /share/workshop/isoseq_workshop/fpardopalacios/SQANTI3/chr15/chr15_seqs.fasta .
+ln -s /share/workshop/isoseq_workshop/fpardopalacios/SQANTI3/chr15/referenceTranscriptome.gtf .
+ln -s /share/workshop/isoseq_workshop/fpardopalacios/SQANTI3/chr15/referenceGenome.fasta .
+
+sqanti3_qc.py chr15_seqs.fasta referenceTranscriptome.gtf referenceGenome.fasta -d exercise1
+
+######## You can download the pdf report into your local computer and visualize it
+####  scp fpardopalacios@tadpole.genomecenter.ucdavis.edu:/share/workshop/isoseq_workshop/fpardopalacios/working_dir/exercise1/*pdf ./
+
+######### EXERCISE 2 ##############
+###### Use complementary information such as Short-Reads
+
+ln -s /share/workshop/isoseq_workshop/fpardopalacios/SQANTI3/chr15/reads.chr15.R1.fastq .
+ln -s /share/workshop/isoseq_workshop/fpardopalacios/SQANTI3/chr15/reads.chr15.R2.fastq .
+
+###### Calculate isoform expression using kallisto
+
+module load kallisto
+kallisto index -i exercise2/chr15_transcripts.idx chr15_seqs.fasta
+kallisto quant -i exercise2/chr15_transcripts.idx -o exercise2/chr15 -b 100 reads.chr15.R1.fastq reads.chr15.R2.fastq
+
+###### Calculate SJ coverage with STAR
+#### Don't run this part. It may take some time...
+#### Output of interest: /share/workshop/isoseq_workshop/fpardopalacios/SQANTI3/chr15/SR_support.tsv
+
+module load star
+STAR --runThreadN 4 --runMode genomeGenerate --genomeDir exercise2/star_idx --genomeFastaFiles referenceGenome.fasta
+
+STAR --runThreadN 4 --genomeDir exercise2/star_idx --readFilesIn reads.chr15.R1.fastq reads.chr15.R2.fastq --outFileNamePrefix exercise2/chr15_star --alignSJoverhangMin 8  --alignSJDBoverhangMin 1 --outFilterType BySJout --outSAMunmapped Within --outFilterMultimapNmax 20 --outFilterMismatchNoverLmax 0.04 --outFilterMismatchNmax 999 --alignIntronMin 20 --alignIntronMax 1000000 --alignMatesGapMax 1000000 --sjdbScore 1 --genomeLoad NoSharedMemory --outSAMtype BAM Unsorted
+
+#### symbolic links to the rest of the data
+
+ln -s /share/workshop/isoseq_workshop/fpardopalacios/SQANTI3/chr15/SR_support.tsv .
+ln -s /share/workshop/isoseq_workshop/fpardopalacios/SQANTI3/chr15/CAGE_peaks.bed .
+ln -s /share/workshop/isoseq_workshop/fpardopalacios/SQANTI3/chr15/polyA.txt .
+ln -s /share/workshop/isoseq_workshop/fpardopalacios/working_dir/exercise2/chr15/abundance.tsv .
+ln -s /share/workshop/isoseq_workshop/fpardopalacios/SQANTI3/chr15/FL_counts.txt .
+
+## Let's use -g option
+
+sqanti3_qc.py -g exercise1/chr15_seqs_corrected.gtf referenceTranscriptome.gtf referenceGenome.fasta -o chr15 -d exercise2 --fl_count FL_counts.txt --expression abundance.tsv -c SR_support.tsv --cage_peak CAGE_peaks.bed --polyA_motif polyA.txt
+
+
+################################
+######### EXERCISE 3
+################################
+
+ln -s /share/workshop/isoseq_workshop/fpardopalacios/SQANTI3/sqanti3_RulesFilter.py .
+
+cd exercise2
+
+../sqanti3_RulesFilter.py chr15_classification.txt chr15_corrected.fasta chr15_corrected.gtf -c 3 -a 0.6
+
+#################################
+######### EXERCISE 4
+#################################
+
+ln -s /share/workshop/isoseq_workshop/fpardopalacios/SQANTI3/chr15/tappAS_annotation.gff3 .
+
+sqanti3_qc.py -g exercise1/chr15_seqs_corrected.gtf referenceTranscriptome.gtf referenceGenome.fasta -o chr15 -d exercise4 --fl_count FL_counts.txt --expression abundance.tsv -c SR_support.tsv --cage_peak CAGE_peaks.bed --polyA_motif polyA.txt --isoAnnotLite --gff3 tappAS_annotation.gff3
